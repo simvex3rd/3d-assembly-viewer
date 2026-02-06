@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>3D Assembly Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; overflow: hidden; }
+
+  #sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0; width: 300px;
+    background: #16213e; border-right: 1px solid #0f3460;
+    overflow-y: auto; z-index: 100; display: flex; flex-direction: column;
+  }
+  #sidebar h2 { padding: 15px; background: #0f3460; font-size: 16px; text-align: center; }
+
+  .section-title {
+    padding: 10px 15px; font-size: 13px; color: #a0a0c0;
+    text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #0f3460;
+  }
+
+  .project-btn {
+    display: block; width: calc(100% - 20px); margin: 5px 10px; padding: 10px 15px;
+    background: #1a1a3e; border: 1px solid #0f3460; color: #e0e0ff;
+    border-radius: 6px; cursor: pointer; font-size: 14px; text-align: left;
+    transition: all 0.2s;
+  }
+  .project-btn:hover { background: #0f3460; }
+  .project-btn.active { background: #e94560; border-color: #e94560; }
+  .project-btn .part-count { font-size: 11px; color: #888; margin-top: 3px; }
+
+  #parts-list { flex: 1; overflow-y: auto; }
+  .part-item {
+    display: flex; align-items: center; padding: 8px 15px; gap: 8px;
+    border-bottom: 1px solid #0f3460; cursor: pointer; transition: background 0.15s;
+  }
+  .part-item:hover { background: #1a1a3e; }
+  .part-item.selected { background: #e9456033; border-left: 3px solid #e94560; }
+  .part-item .vis-toggle {
+    width: 18px; height: 18px; border-radius: 3px; border: 1px solid #555;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; flex-shrink: 0;
+  }
+  .part-item .vis-toggle.visible { background: #4ecca3; border-color: #4ecca3; }
+  .part-item .part-name { font-size: 13px; flex: 1; }
+  .part-item .color-dot {
+    width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+  }
+
+  #toolbar {
+    padding: 10px; border-top: 1px solid #0f3460; background: #0f3460;
+  }
+  #toolbar button {
+    padding: 6px 12px; margin: 3px; border: 1px solid #555; background: #1a1a3e;
+    color: #eee; border-radius: 4px; cursor: pointer; font-size: 12px;
+  }
+  #toolbar button:hover { background: #e94560; }
+  #toolbar button.active-mode { background: #e94560; border-color: #e94560; }
+
+  #canvas-container {
+    position: fixed; left: 300px; top: 0; right: 0; bottom: 0;
+  }
+
+  #info-panel {
+    position: fixed; right: 15px; top: 15px; background: #16213ecc;
+    padding: 15px; border-radius: 8px; border: 1px solid #0f3460;
+    font-size: 12px; z-index: 50; min-width: 200px;
+  }
+  #info-panel h3 { margin-bottom: 8px; color: #e94560; }
+  #info-panel .row { display: flex; justify-content: space-between; margin: 4px 0; }
+  #info-panel .row label { color: #888; }
+  #info-panel input[type="number"] {
+    width: 60px; background: #1a1a2e; border: 1px solid #333; color: #eee;
+    padding: 2px 5px; border-radius: 3px; font-size: 12px;
+  }
+
+  #ref-image {
+    position: fixed; right: 15px; bottom: 15px; z-index: 50;
+    border-radius: 8px; overflow: hidden; border: 2px solid #0f3460;
+    cursor: pointer; display: none;
+  }
+  #ref-image img { max-width: 300px; max-height: 200px; display: block; }
+  #ref-image .label {
+    position: absolute; top: 5px; left: 5px; background: #000a; padding: 2px 8px;
+    border-radius: 4px; font-size: 11px;
+  }
+
+  #loading {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    background: #16213eee; padding: 30px 50px; border-radius: 12px;
+    text-align: center; z-index: 200; display: none;
+  }
+  #loading .spinner {
+    width: 40px; height: 40px; border: 4px solid #333; border-top: 4px solid #e94560;
+    border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 15px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .toast {
+    position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+    background: #4ecca3; color: #000; padding: 10px 25px; border-radius: 8px;
+    z-index: 300; font-weight: bold; animation: fadeOut 2s forwards; animation-delay: 1s;
+  }
+  @keyframes fadeOut { to { opacity: 0; } }
+
+  #help-overlay {
+    position: fixed; inset: 0; background: #000c; z-index: 500; display: none;
+    align-items: center; justify-content: center;
+  }
+  #help-overlay .content {
+    background: #16213e; padding: 30px; border-radius: 12px; max-width: 500px;
+    border: 1px solid #0f3460;
+  }
+  #help-overlay h3 { margin-bottom: 15px; color: #e94560; }
+  #help-overlay p { margin: 8px 0; font-size: 14px; line-height: 1.6; }
+  #help-overlay kbd {
+    background: #0f3460; padding: 2px 6px; border-radius: 3px; font-size: 12px;
+  }
+  #help-overlay .close-btn {
+    margin-top: 15px; padding: 8px 20px; background: #e94560; border: none;
+    color: #fff; border-radius: 6px; cursor: pointer; font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h2>3D Assembly Viewer</h2>
+  <div class="section-title">Projects</div>
+  <div id="project-list"></div>
+  <div class="section-title">Parts</div>
+  <div id="parts-list"></div>
+  <div id="toolbar">
+    <button id="btn-translate" class="active-mode" onclick="setMode('translate')">Move (G)</button>
+    <button id="btn-rotate" onclick="setMode('rotate')">Rotate (R)</button>
+    <button id="btn-scale" onclick="setMode('scale')">Scale (S)</button>
+    <br>
+    <button onclick="exportAssembly()">Export GLB</button>
+    <button onclick="resetCamera()">Reset View</button>
+    <button onclick="toggleHelp()">Help (?)</button>
+  </div>
+</div>
+
+<div id="canvas-container"></div>
+
+<div id="info-panel" style="display:none">
+  <h3 id="info-name">Part</h3>
+  <div class="row"><label>X</label><input type="number" id="pos-x" step="0.1" onchange="updateFromInput('position','x')"></div>
+  <div class="row"><label>Y</label><input type="number" id="pos-y" step="0.1" onchange="updateFromInput('position','y')"></div>
+  <div class="row"><label>Z</label><input type="number" id="pos-z" step="0.1" onchange="updateFromInput('position','z')"></div>
+  <div style="margin-top: 8px; font-size: 11px; color: #666">Rotation (deg)</div>
+  <div class="row"><label>RX</label><input type="number" id="rot-x" step="5" onchange="updateFromInput('rotation','x')"></div>
+  <div class="row"><label>RY</label><input type="number" id="rot-y" step="5" onchange="updateFromInput('rotation','y')"></div>
+  <div class="row"><label>RZ</label><input type="number" id="rot-z" step="5" onchange="updateFromInput('rotation','z')"></div>
+</div>
+
+<div id="ref-image">
+  <div class="label">Reference</div>
+  <img id="ref-img" src="">
+</div>
+
+<div id="loading"><div class="spinner"></div><div>Loading parts...</div></div>
+
+<div id="help-overlay" onclick="toggleHelp()">
+  <div class="content" onclick="event.stopPropagation()">
+    <h3>Assembly Viewer Controls</h3>
+    <p><kbd>Left Click</kbd> — Select part</p>
+    <p><kbd>Right Drag</kbd> — Orbit camera</p>
+    <p><kbd>Middle Drag</kbd> — Pan camera</p>
+    <p><kbd>Scroll</kbd> — Zoom</p>
+    <p><kbd>G</kbd> — Move mode</p>
+    <p><kbd>R</kbd> — Rotate mode</p>
+    <p><kbd>S</kbd> — Scale mode</p>
+    <p><kbd>F</kbd> — Focus on selected part</p>
+    <p><kbd>H</kbd> — Hide/show selected part</p>
+    <p><kbd>Esc</kbd> — Deselect</p>
+    <p><kbd>?</kbd> — Toggle this help</p>
+    <button class="close-btn" onclick="toggleHelp()">Close</button>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+
+// Scene setup
+const container = document.getElementById('canvas-container');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+
+const camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.01, 1000);
+camera.position.set(0.3, 0.3, 0.3);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(container.clientWidth, container.clientHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+container.appendChild(renderer.domElement);
+
+// Lighting
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+dirLight.position.set(5, 10, 7);
+dirLight.castShadow = true;
+scene.add(dirLight);
+
+const dirLight2 = new THREE.DirectionalLight(0x8888ff, 0.5);
+dirLight2.position.set(-5, 5, -5);
+scene.add(dirLight2);
+
+// Grid and ground
+const grid = new THREE.GridHelper(2, 20, 0x444466, 0x333355);
+scene.add(grid);
+
+// Controls
+const orbitControls = new OrbitControls(camera, renderer.domElement);
+orbitControls.enableDamping = true;
+orbitControls.dampingFactor = 0.08;
+
+const transformControls = new TransformControls(camera, renderer.domElement);
+transformControls.addEventListener('dragging-changed', e => {
+  orbitControls.enabled = !e.value;
+});
+transformControls.addEventListener('objectChange', () => {
+  updateInfoPanel();
+});
+scene.add(transformControls.getHelper());
+
+// State
+let projects = [];
+let currentProject = null;
+let loadedParts = [];  // { name, object, visible }
+let selectedPart = null;
+const partColors = [
+  0xe94560, 0x4ecca3, 0x3282b8, 0xf0a500, 0xc060e0,
+  0x00b894, 0xfd79a8, 0x6c5ce7, 0xfab1a0, 0x00cec9,
+  0xff7675, 0xa29bfe, 0xffeaa7, 0xdfe6e9, 0x55efc4
+];
+
+// Static project data (no server needed)
+const STATIC_PROJECTS = [
+  { name: 'Drone', parts: ['Arm gear.glb','Beater disc.glb','Gearing.glb','Impellar Blade.glb','Leg.glb','Main frame.glb','Main frame_MIR.glb','Nut.glb','Screw.glb','xyz.glb'], images: ['조립도1.png','조립도2.png','조립도3.png','조립도4.png','조립도5.png','조립도6.png','조립도7.png','조립도8.png'] },
+  { name: 'Leaf Spring', parts: ['Clamp-Center.glb','Clamp-Primary.glb','Clamp-Secondary.glb','Leaf-Layer.glb','Support.glb','Support-Chassis Rigid.glb','Support-Chassis.glb','Support-Rubber 60mm.glb','Support-Rubber.glb'], images: ['판스프링 조립도.png','판스프링 조립도2.png'] },
+  { name: 'Machine Vice', parts: ['Part1 Fuhrung.glb','Part1.glb','Part2 Feste Backe.glb','Part3-lose backe.glb','Part4 spindelsockel.glb','Part5-Spannbacke.glb','Part6-fuhrungschiene.glb','Part7-TrapezSpindel.glb','Part8-grundplatte.glb','Part9-Druckhulse.glb'], images: ['공작 기계 바이스.jpg','공작 기계 바이스2.png'] },
+  { name: 'Robot Arm', parts: ['base.glb','Part2.glb','Part3.glb','Part4.glb','Part5.glb','Part6.glb','Part7.glb','Part8.glb'], images: ['로보팔 조립도.png'] },
+  { name: 'Robot Gripper', parts: ['Base Gear.glb','Base Mounting bracket.glb','Base Plate.glb','Gear link 1.glb','Gear link 2.glb','Gripper.glb','Link.glb','Pin.glb'], images: ['로봇집게 조립도.png','로봇집게 조립도2.png','로봇집게 조립도3.png'] },
+  { name: 'Suspension', parts: ['BASE.glb','NIT.glb','NUT.glb','ROD.glb','SPRING.glb'], images: ['서스펜션 조립도.png'] },
+  { name: 'V4_Engine', parts: ['Connecting Rod Cap.glb','Connecting Rod.glb','Conrod Bolt.glb','Crankshaft.glb','Piston Pin.glb','Piston Ring.glb','Piston.glb'], images: ['V4실린더 엔진 조립도.png'] },
+];
+
+// Load project list
+async function loadProjects() {
+  projects = STATIC_PROJECTS;
+  const list = document.getElementById('project-list');
+  list.innerHTML = '';
+  projects.forEach((p, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'project-btn';
+    btn.innerHTML = `${p.name}<div class="part-count">${p.parts.length} parts, ${p.images.length} ref images</div>`;
+    btn.onclick = () => loadProject(i);
+    list.appendChild(btn);
+  });
+}
+
+async function loadProject(index) {
+  const proj = projects[index];
+  currentProject = proj;
+
+  // Update UI
+  document.querySelectorAll('.project-btn').forEach((b, i) => {
+    b.classList.toggle('active', i === index);
+  });
+
+  // Show loading
+  document.getElementById('loading').style.display = 'block';
+
+  // Clear existing parts
+  clearScene();
+
+  // Show reference image
+  if (proj.images.length > 0) {
+    const refDiv = document.getElementById('ref-image');
+    const refImg = document.getElementById('ref-img');
+    refImg.src = `/${encodeURIComponent(proj.name)}/${encodeURIComponent(proj.images[0])}`;
+    refDiv.style.display = 'block';
+
+    // Click to cycle images
+    let imgIdx = 0;
+    refDiv.onclick = () => {
+      imgIdx = (imgIdx + 1) % proj.images.length;
+      refImg.src = `/${encodeURIComponent(proj.name)}/${encodeURIComponent(proj.images[imgIdx])}`;
+    };
+  } else {
+    document.getElementById('ref-image').style.display = 'none';
+  }
+
+  // Load all GLB parts
+  const loader = new GLTFLoader();
+  const spacing = 0.15;
+
+  for (let i = 0; i < proj.parts.length; i++) {
+    const partName = proj.parts[i];
+    const url = `/${encodeURIComponent(proj.name)}/${encodeURIComponent(partName)}`;
+
+    try {
+      const gltf = await new Promise((resolve, reject) => {
+        loader.load(url, resolve, undefined, reject);
+      });
+
+      const object = gltf.scene;
+      object.name = partName.replace('.glb', '');
+
+      // Compute bounding box to arrange parts side by side
+      const box = new THREE.Box3().setFromObject(object);
+      const size = box.getSize(new THREE.Vector3());
+
+      // Offset parts so they don't overlap - arrange in a line along X
+      object.position.x = i * spacing;
+
+      // Add outline color for identification
+      object.traverse(child => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+          // Store original materials
+          child.userData.originalMaterial = child.material;
+        }
+      });
+
+      scene.add(object);
+      loadedParts.push({
+        name: partName.replace('.glb', ''),
+        object: object,
+        visible: true,
+        color: partColors[i % partColors.length]
+      });
+    } catch (err) {
+      console.error(`Failed to load ${partName}:`, err);
+    }
+  }
+
+  // Update parts list UI
+  updatePartsList();
+
+  // Fit camera to scene
+  fitCameraToScene();
+
+  document.getElementById('loading').style.display = 'none';
+}
+
+function clearScene() {
+  // Detach transform controls
+  transformControls.detach();
+  selectedPart = null;
+  document.getElementById('info-panel').style.display = 'none';
+
+  // Remove all loaded parts
+  for (const part of loadedParts) {
+    scene.remove(part.object);
+    part.object.traverse(child => {
+      if (child.isMesh) {
+        child.geometry?.dispose();
+        if (Array.isArray(child.material)) {
+          child.material.forEach(m => m.dispose());
+        } else {
+          child.material?.dispose();
+        }
+      }
+    });
+  }
+  loadedParts = [];
+}
+
+function updatePartsList() {
+  const list = document.getElementById('parts-list');
+  list.innerHTML = '';
+  loadedParts.forEach((part, i) => {
+    const div = document.createElement('div');
+    div.className = 'part-item' + (selectedPart === part ? ' selected' : '');
+    div.innerHTML = `
+      <div class="vis-toggle ${part.visible ? 'visible' : ''}" data-index="${i}">${part.visible ? '✓' : ''}</div>
+      <span class="part-name">${part.name}</span>
+      <div class="color-dot" style="background:#${part.color.toString(16).padStart(6,'0')}"></div>
+    `;
+    div.onclick = (e) => {
+      if (e.target.classList.contains('vis-toggle')) {
+        togglePartVisibility(i);
+      } else {
+        selectPart(i);
+      }
+    };
+    list.appendChild(div);
+  });
+}
+
+function selectPart(index) {
+  const part = loadedParts[index];
+  if (!part) return;
+
+  // Deselect previous
+  if (selectedPart) {
+    highlightPart(selectedPart, false);
+  }
+
+  selectedPart = part;
+  highlightPart(part, true);
+  transformControls.attach(part.object);
+
+  updatePartsList();
+  updateInfoPanel();
+  document.getElementById('info-panel').style.display = 'block';
+}
+
+function deselectPart() {
+  if (selectedPart) {
+    highlightPart(selectedPart, false);
+  }
+  selectedPart = null;
+  transformControls.detach();
+  document.getElementById('info-panel').style.display = 'none';
+  updatePartsList();
+}
+
+function highlightPart(part, highlight) {
+  part.object.traverse(child => {
+    if (child.isMesh) {
+      if (highlight) {
+        child.material = child.userData.originalMaterial.clone();
+        child.material.emissive = new THREE.Color(part.color);
+        child.material.emissiveIntensity = 0.15;
+      } else {
+        child.material = child.userData.originalMaterial;
+      }
+    }
+  });
+}
+
+function togglePartVisibility(index) {
+  const part = loadedParts[index];
+  part.visible = !part.visible;
+  part.object.visible = part.visible;
+  updatePartsList();
+}
+
+function updateInfoPanel() {
+  if (!selectedPart) return;
+  const obj = selectedPart.object;
+  document.getElementById('info-name').textContent = selectedPart.name;
+  document.getElementById('pos-x').value = obj.position.x.toFixed(3);
+  document.getElementById('pos-y').value = obj.position.y.toFixed(3);
+  document.getElementById('pos-z').value = obj.position.z.toFixed(3);
+  document.getElementById('rot-x').value = THREE.MathUtils.radToDeg(obj.rotation.x).toFixed(1);
+  document.getElementById('rot-y').value = THREE.MathUtils.radToDeg(obj.rotation.y).toFixed(1);
+  document.getElementById('rot-z').value = THREE.MathUtils.radToDeg(obj.rotation.z).toFixed(1);
+}
+
+window.updateFromInput = function(prop, axis) {
+  if (!selectedPart) return;
+  const obj = selectedPart.object;
+  if (prop === 'position') {
+    obj.position[axis] = parseFloat(document.getElementById(`pos-${axis}`).value) || 0;
+  } else if (prop === 'rotation') {
+    obj.rotation[axis] = THREE.MathUtils.degToRad(parseFloat(document.getElementById(`rot-${axis}`).value) || 0);
+  }
+};
+
+window.setMode = function(mode) {
+  transformControls.setMode(mode);
+  document.getElementById('btn-translate').classList.toggle('active-mode', mode === 'translate');
+  document.getElementById('btn-rotate').classList.toggle('active-mode', mode === 'rotate');
+  document.getElementById('btn-scale').classList.toggle('active-mode', mode === 'scale');
+};
+
+function fitCameraToScene() {
+  const box = new THREE.Box3();
+  for (const part of loadedParts) {
+    if (part.visible) {
+      box.expandByObject(part.object);
+    }
+  }
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const dist = maxDim * 2;
+
+  camera.position.set(center.x + dist * 0.7, center.y + dist * 0.5, center.z + dist * 0.7);
+  orbitControls.target.copy(center);
+  orbitControls.update();
+}
+
+window.resetCamera = function() {
+  fitCameraToScene();
+};
+
+// Export assembled GLB
+window.exportAssembly = function() {
+  if (loadedParts.length === 0) return;
+
+  const exportScene = new THREE.Scene();
+  for (const part of loadedParts) {
+    if (part.visible) {
+      exportScene.add(part.object.clone());
+    }
+  }
+
+  const exporter = new GLTFExporter();
+  exporter.parse(exportScene, (result) => {
+    const blob = new Blob([result], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${currentProject.name}_assembled.glb`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Exported!');
+  }, (err) => {
+    console.error('Export error:', err);
+  }, { binary: true });
+};
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+window.toggleHelp = function() {
+  const h = document.getElementById('help-overlay');
+  h.style.display = h.style.display === 'flex' ? 'none' : 'flex';
+};
+
+// Raycaster for clicking parts
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+renderer.domElement.addEventListener('click', (event) => {
+  // Don't select if we were dragging
+  if (transformControls.dragging) return;
+
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+
+  const allMeshes = [];
+  for (const part of loadedParts) {
+    if (part.visible) {
+      part.object.traverse(child => {
+        if (child.isMesh) {
+          child.userData.partIndex = loadedParts.indexOf(part);
+          allMeshes.push(child);
+        }
+      });
+    }
+  }
+
+  const intersects = raycaster.intersectObjects(allMeshes);
+  if (intersects.length > 0) {
+    const idx = intersects[0].object.userData.partIndex;
+    selectPart(idx);
+  }
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  switch(e.key.toLowerCase()) {
+    case 'g': setMode('translate'); break;
+    case 'r': setMode('rotate'); break;
+    case 's': setMode('scale'); break;
+    case 'escape': deselectPart(); break;
+    case '?': toggleHelp(); break;
+    case 'f':
+      if (selectedPart) {
+        const box = new THREE.Box3().setFromObject(selectedPart.object);
+        const center = box.getCenter(new THREE.Vector3());
+        orbitControls.target.copy(center);
+        orbitControls.update();
+      }
+      break;
+    case 'h':
+      if (selectedPart) {
+        const idx = loadedParts.indexOf(selectedPart);
+        togglePartVisibility(idx);
+      }
+      break;
+  }
+});
+
+// Resize handling
+window.addEventListener('resize', () => {
+  camera.aspect = container.clientWidth / container.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(container.clientWidth, container.clientHeight);
+});
+
+// Animation loop
+function animate() {
+  requestAnimationFrame(animate);
+  orbitControls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+// Initialize
+loadProjects();
+</script>
+</body>
+</html>
